@@ -44,6 +44,7 @@ dependencies:
   back_button_interceptor: ^8.0.3
   mobile_scanner: ^6.0.6
   url_launcher: ^6.1.0
+  fluttertoast: ^8.2.12
   # flutter_map_location_marker: ^9.1.1
 
 

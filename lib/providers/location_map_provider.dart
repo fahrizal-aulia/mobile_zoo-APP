@@ -122,4 +122,36 @@ class LocationProvider with ChangeNotifier {
     }
     return "Alamat tidak ditemukan";
   }
+
+  // Logika untuk memperbarui rute jika pengguna menyimpang
+  Future<void> checkRouteDeviation(
+      LatLng currentPosition, List<LatLng> routePoints) async {
+    final double deviationThreshold =
+        50.0; // Jarak maksimum penyimpangan (meter)
+    bool isOnRoute = false;
+
+    for (var point in routePoints) {
+      double distance = Geolocator.distanceBetween(
+        currentPosition.latitude,
+        currentPosition.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (distance <= deviationThreshold) {
+        isOnRoute = true;
+        break;
+      }
+    }
+
+    if (!isOnRoute) {
+      // Jika pengguna menyimpang, perbarui rute
+      final newRoutePoints = await ApiService.getRoute(
+        currentPosition,
+        routePoints.last,
+      );
+      routePoints.clear();
+      routePoints.addAll(newRoutePoints);
+      notifyListeners();
+    }
+  }
 }

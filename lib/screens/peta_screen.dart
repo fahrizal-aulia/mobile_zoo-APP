@@ -231,6 +231,27 @@ class _PetaScreenState extends State<PetaScreen> {
                                 ))
                             .toList(),
                       ),
+                      if (locationProvider.currentPosition != null)
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: locationProvider.currentPosition,
+                              width: 40,
+                              height: 40,
+                              child: Transform.rotate(
+                                angle: (_heading != null
+                                    ? (_heading! - 90) * (pi / 180)
+                                    : 0), // Rotasi berdasarkan heading
+                                child: Image.asset(
+                                  'assets/icon/arah.png', // Ganti dengan path ke ikon panah
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       PolylineLayer(
                         polylines: [
                           Polyline(

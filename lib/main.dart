@@ -5,8 +5,8 @@ import 'package:back_button_interceptor/back_button_interceptor.dart'; // Import
 import 'providers/location_map_provider.dart'; // Sesuaikan dengan file provider Anda
 import 'screens/peta_screen.dart';
 import 'screens/camera_screen.dart';
-// import 'screens/saran_screen.dart';
-// import 'screens/info_screen.dart';
+import 'screens/saran_screen.dart';
+import 'screens/info_screen.dart';
 import 'screens/splash_screen.dart'; // Tambahkan import untuk SplashScreen
 
 void main() {
@@ -41,8 +41,8 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _pages = [
     PetaScreen(),
     CameraScreen(),
-    // InfoScreen(),
-    // SaranScreen(),
+    InfoScreen(),
+    SaranScreen(),
   ];
 
   @override
@@ -134,14 +134,14 @@ class _MainScreenState extends State<MainScreen> {
               icon: Icon(Icons.camera),
               label: 'Kamera',
             ),
-            // BottomNavigationBarItem(
-            //   icon: Icon(Icons.info),
-            //   label: 'Info',
-            // ),
-            // BottomNavigationBarItem(
-            //   icon: Icon(Icons.info),
-            //   label: 'Saran',
-            // ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.info),
+              label: 'Info',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.info),
+              label: 'Saran',
+            ),
           ],
           currentIndex: _currentIndex,
           selectedItemColor: const Color.fromRGBO(1, 117, 105, 1),

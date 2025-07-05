@@ -1,11 +1,14 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_compass/flutter_compass.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:myapp/api/Map_Api.dart';
+import 'package:provider/provider.dart';
 import '../model/NavigationInstruction.dart';
 import '../providers/location_map_provider.dart';
-import 'package:provider/provider.dart';
-import '../api/Map_Api.dart';
 
 class NavigationScreen extends StatefulWidget {
   final List<NavigationInstruction> instructions;
@@ -20,6 +23,11 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen> {
   double? _heading;
   late LocationProvider _locationProvider;
+  int _currentStep = 0;
+  Timer? _navigationTimer;
+  bool _hasArrived = false;
+  bool _isOffRoute = false;
+  List<LatLng> _passedPoints = [];
 
   @override
   void initState() {
@@ -27,12 +35,19 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _locationProvider = Provider.of<LocationProvider>(context, listen: false);
     _startCompassUpdates();
     _startLocationUpdates();
+    _startAutoNavigation();
+  }
+
+  @override
+  void dispose() {
+    _navigationTimer?.cancel();
+    super.dispose();
   }
 
   void _startCompassUpdates() {
     FlutterCompass.events?.listen((event) {
       setState(() {
-        _heading = event.heading; // Update heading
+        _heading = event.heading;
       });
     });
   }
@@ -43,31 +58,137 @@ class _NavigationScreenState extends State<NavigationScreen> {
     locationProvider.startLocationUpdates(context);
   }
 
-  Future<void> _updateRoute(LatLng currentPosition) async {
-    if (widget.routePoints.isNotEmpty) {
-      try {
-        // Ambil rute baru dari API
-        List<LatLng> newRoutePoints = await ApiService.getRoute(
-          currentPosition,
-          widget.routePoints.last,
-        );
+  void _startAutoNavigation() {
+    _navigationTimer = Timer.periodic(Duration(seconds: 3), (timer) {
+      _checkDistanceToNextInstruction();
+      _checkArrival();
+      _checkOffRoute();
+    });
+  }
 
-        // Ambil instruksi baru dari API
-        List<NavigationInstruction> newInstructions =
-            await ApiService.getRouteInstructions(
-          currentPosition,
-          widget.routePoints.last,
-        );
+  void _checkDistanceToNextInstruction() {
+    if (_currentStep >= widget.routePoints.length - 1) return;
 
-        setState(() {
-          widget.routePoints.clear();
-          widget.routePoints.addAll(newRoutePoints);
-          widget.instructions.clear();
-          widget.instructions.addAll(newInstructions);
-        });
-      } catch (e) {
-        print('Gagal memperbarui rute: ${e.toString()}');
+    final userLocation = _locationProvider.currentPosition;
+    final nextPoint = widget.routePoints[_currentStep];
+
+    final distance = Distance().as(
+      LengthUnit.Meter,
+      userLocation,
+      nextPoint,
+    );
+
+    if (distance < 25) {
+      setState(() {
+        _passedPoints.add(
+            widget.routePoints[_currentStep]); // Simpan yang sudah dilewati
+        if (_currentStep < widget.instructions.length - 1) {
+          _currentStep++;
+        }
+      });
+    }
+  }
+
+  void _checkArrival() {
+    final userLocation = _locationProvider.currentPosition;
+    final destination = widget.routePoints.last;
+
+    final distance = Distance().as(
+      LengthUnit.Meter,
+      userLocation,
+      destination,
+    );
+
+    if (!_hasArrived && distance < 15) {
+      _hasArrived = true;
+      Fluttertoast.showToast(
+        msg: "Anda telah sampai di tujuan!",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.CENTER,
+      );
+    }
+  }
+
+  void _checkOffRoute() async {
+    final userLocation = _locationProvider.currentPosition;
+
+    final deviationThreshold = 15.0; // dalam meter
+    bool isOnRoute = false;
+
+    for (var point in widget.routePoints) {
+      final distance = Distance().as(
+        LengthUnit.Meter,
+        userLocation,
+        point,
+      );
+      if (distance <= deviationThreshold) {
+        isOnRoute = true;
+        break;
       }
+    }
+
+    if (!isOnRoute && !_isOffRoute) {
+      setState(() {
+        _isOffRoute = true;
+      });
+
+      Fluttertoast.showToast(
+        msg: "Anda keluar dari jalur, menghitung ulang rute...",
+        toastLength: Toast.LENGTH_LONG,
+        gravity: ToastGravity.CENTER,
+      );
+
+      final newRoute = await ApiService.fetchNewRoute(
+        userLocation,
+        widget.routePoints.last,
+      );
+
+      final newInstructions = await ApiService.getRouteInstructions(
+        userLocation,
+        widget.routePoints.last,
+      );
+
+      setState(() {
+        widget.routePoints
+          ..clear()
+          ..addAll(newRoute);
+        widget.instructions
+          ..clear()
+          ..addAll(newInstructions);
+        _currentStep = 0;
+        _isOffRoute = false;
+        _passedPoints.clear();
+      });
+    }
+  }
+
+  void _reroute(LatLng userLocation) async {
+    try {
+      final newRoute =
+          await ApiService.fetchNewRoute(userLocation, widget.routePoints.last);
+      setState(() {
+        widget.routePoints
+          ..clear()
+          ..addAll(newRoute);
+        _currentStep = 0;
+        _isOffRoute = false;
+        _passedPoints.clear();
+      });
+      Fluttertoast.showToast(msg: "Rute baru berhasil dihitung ulang.");
+    } catch (e) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text("Gagal Reroute"),
+          content: Text("Tidak dapat menghitung ulang rute: $e"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Tutup"),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -75,30 +196,32 @@ class _NavigationScreenState extends State<NavigationScreen> {
     int hours = seconds ~/ 3600;
     int minutes = (seconds % 3600) ~/ 60;
     String formatted = '';
-    if (hours > 0) {
-      formatted += '$hours jam ';
-    }
-    if (minutes > 0) {
-      formatted += '$minutes menit';
-    }
+    if (hours > 0) formatted += '$hours jam ';
+    if (minutes > 0) formatted += '$minutes menit';
     return formatted.isNotEmpty ? formatted : '0 menit';
+  }
+
+  IconData _getDirectionIcon(double angle) {
+    if (angle >= -45 && angle < 45) return Icons.arrow_upward;
+    if (angle >= 45 && angle < 135) return Icons.turn_right;
+    if (angle >= -135 && angle < -45) return Icons.turn_left;
+    return Icons.u_turn_left;
   }
 
   @override
   Widget build(BuildContext context) {
+    final instruction = widget.instructions[_currentStep];
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Navigasi'),
-      ),
+      appBar: AppBar(title: Text('Navigasi')),
       body: Stack(
         children: [
-          // Peta
           FlutterMap(
             options: MapOptions(
               initialCenter: widget.routePoints.isNotEmpty
                   ? widget.routePoints[0]
                   : LatLng(0, 0),
-              initialZoom: 15.0,
+              initialZoom: 17.0,
             ),
             children: [
               TileLayer(
@@ -106,8 +229,14 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
               PolylineLayer(
                 polylines: [
+                  if (_passedPoints.isNotEmpty)
+                    Polyline(
+                      points: _passedPoints,
+                      strokeWidth: 4.0,
+                      color: Colors.grey,
+                    ),
                   Polyline(
-                    points: widget.routePoints,
+                    points: widget.routePoints.skip(_currentStep).toList(),
                     strokeWidth: 4.0,
                     color: Colors.blue,
                   ),
@@ -121,21 +250,18 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     height: 40,
                     child: Transform.rotate(
                       angle: (_heading != null
-                          ? _heading! * (3.141592653589793 / 180)
+                          ? (_heading! - 90) * (pi / 180)
                           : 0),
                       child: Image.asset(
-                        'assets/icon/arah.png', // Ganti dengan path ke ikon panah
+                        'assets/icon/arah.png',
                         width: 40,
                         height: 40,
                         fit: BoxFit.cover,
                       ),
                     ),
                   ),
-                  // Marker untuk titik akhir
                   Marker(
-                    point: widget.routePoints.isNotEmpty
-                        ? widget.routePoints.last
-                        : LatLng(0, 0),
+                    point: widget.routePoints.last,
                     width: 40.0,
                     height: 40.0,
                     child: Icon(Icons.flag, color: Colors.green, size: 40),
@@ -144,94 +270,50 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
             ],
           ),
-          // Panel instruksi navigasi
           Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
+            top: 16,
+            left: 16,
+            right: 16,
+            child: Card(
+              elevation: 6,
               color: Colors.white,
-              padding: EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // Card untuk instruksi
-                  Card(
-                    elevation: 4,
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Row(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Transform.rotate(
+                      angle: (instruction.angle - 90) * (pi / 180),
+                      child: Icon(
+                        _getDirectionIcon(instruction.angle),
+                        color: Colors.blue,
+                        size: 40,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Ikon arah dinamis
-                          Transform.rotate(
-                            angle: (widget.instructions.isNotEmpty
-                                ? (widget.instructions[0].angle - 90) *
-                                    (3.141592653589793 / 180)
-                                : 0),
-                            child: Icon(
-                              Icons.arrow_forward,
-                              color: Colors.blue,
-                              size: 40,
-                            ),
-                          ),
-                          SizedBox(width: 10),
-                          // Nama jalan
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.instructions.isNotEmpty
-                                      ? widget.instructions[0].direction
-                                      : "Mulai",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  widget.instructions.isNotEmpty
-                                      ? widget.instructions[0].streetName
-                                      : "",
-                                  style: TextStyle(fontSize: 14),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Waktu yang tersisa
                           Text(
-                            widget.instructions.isNotEmpty
-                                ? formatDuration(int.tryParse(
-                                        widget.instructions[0].duration) ??
-                                    0)
-                                : "",
-                            style: TextStyle(fontSize: 16),
+                            instruction.direction,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            instruction.streetName,
+                            style: TextStyle(fontSize: 14),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                  SizedBox(height: 10),
-                  // Total waktu dan jarak
-                  Card(
-                    elevation: 4,
-                    child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "Total Waktu: ${widget.instructions.isNotEmpty ? formatDuration(int.tryParse(widget.instructions[0].duration) ?? 0) : "0 menit"}",
-                            style: TextStyle(fontSize: 16),
-                          ),
-                          Text(
-                            "Jarak: ${widget.instructions.isNotEmpty ? widget.instructions[0].distance : "0"} m",
-                            style: TextStyle(fontSize: 16),
-                          ),
-                        ],
-                      ),
+                    Text(
+                      formatDuration(int.tryParse(instruction.duration) ?? 0),
+                      style: TextStyle(fontSize: 16),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
