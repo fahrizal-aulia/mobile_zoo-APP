@@ -1,72 +1,104 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:lottie/lottie.dart';
+import 'dart:ui'; // Diperlukan untuk ImageFilter
+import '../widget/tema_background.dart'; // Pastikan path ini benar
 
 class CameraScreen extends StatefulWidget {
+  const CameraScreen({super.key});
+
   @override
-  _CameraScreenState createState() => _CameraScreenState();
+  State<CameraScreen> createState() => _CameraScreenState();
 }
 
 class _CameraScreenState extends State<CameraScreen> {
-  MobileScannerController cameraController = MobileScannerController();
-  String? scannedData;
-  bool isDialogOpen = false;
+  final MobileScannerController _cameraController = MobileScannerController(
+    // Optimasi untuk deteksi barcode yang lebih cepat
+    detectionSpeed: DetectionSpeed.normal,
+  );
+  bool _isProcessing = false;
 
-  void _showConfirmationDialog(String url) {
-    setState(() {
-      isDialogOpen = true;
-    });
+  @override
+  void dispose() {
+    _cameraController.dispose();
+    super.dispose();
+  }
 
-    showDialog<void>(
+  void _onDetect(BarcodeCapture capture) async {
+    if (_isProcessing || !mounted) return;
+
+    final barcode = capture.barcodes.firstOrNull;
+    if (barcode?.rawValue != null) {
+      setState(() => _isProcessing = true);
+      _cameraController.stop();
+      HapticFeedback.lightImpact();
+
+      final uri = Uri.tryParse(barcode!.rawValue!);
+
+      if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+        await _showConfirmationDialog(uri);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Kode QR tidak berisi link yang valid.')),
+        );
+      }
+
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        _cameraController.start();
+      }
+    }
+  }
+
+  Future<void> _showConfirmationDialog(Uri uri) async {
+    return showDialog<void>(
       context: context,
-      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title:
-              Text('Buka Link?', style: TextStyle(fontWeight: FontWeight.bold)),
-          content: SingleChildScrollView(
-            child: Column(
-              children: [
-                Lottie.network(
-                    'https://lottie.host/97f25c00-1e99-43bd-8911-359c486931b1/yd6EmYwqFc.json',
-                    height: 120),
-                SizedBox(height: 10),
-                Text('Anda akan diarahkan ke:'),
-                Text(url,
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-              ],
-            ),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Buka Link?',
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Lottie.asset('assets/animations/qr_anim.json', height: 100),
+              const SizedBox(height: 10),
+              const Text('Anda akan membuka link detail hewan:',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 4),
+              Text(
+                uri.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.blueAccent),
+              ),
+            ],
           ),
+          actionsAlignment: MainAxisAlignment.spaceEvenly,
           actions: [
             TextButton(
-              child: Text('Batal', style: TextStyle(color: Colors.red)),
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() {
-                  isDialogOpen = false;
-                });
-                cameraController.start();
-              },
+              child: const Text('Batal',
+                  style: TextStyle(color: Colors.redAccent)),
+              onPressed: () => Navigator.of(context).pop(),
             ),
-            TextButton(
-              child: Text('Buka', style: TextStyle(color: Colors.blueAccent)),
+            FilledButton.icon(
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Buka'),
               onPressed: () async {
-                if (await canLaunch(url)) {
-                  await launch(url);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Tidak dapat membuka link')),
-                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Tidak dapat membuka link: $uri')),
+                    );
+                  }
                 }
-                Navigator.of(context).pop();
-                setState(() {
-                  isDialogOpen = false;
-                });
-                cameraController.start();
+                if (mounted) Navigator.of(context).pop();
               },
             ),
           ],
@@ -78,82 +110,150 @@ class _CameraScreenState extends State<CameraScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // PERBAIKAN: Latar belakang dibuat transparan agar TemaBackground terlihat
+      backgroundColor: Colors.transparent,
+      // Hapus AppBar agar lebih imersif
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text('Scan Barcode'),
-        backgroundColor: Colors.blueAccent,
-        centerTitle: true,
+        title: const Text('Scan QR Code Hewan'),
+        backgroundColor: Colors.transparent, // AppBar transparan
+        elevation: 0, // Hilangkan bayangan
+        actions: [
+          IconButton(
+              tooltip: 'Nyalakan Flash',
+              icon: const Icon(Icons.flash_on),
+              onPressed: () => _cameraController.toggleTorch()),
+        ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                MobileScanner(
-                  controller: cameraController,
-                  onDetect: (capture) {
-                    final List<Barcode> barcodes = capture.barcodes;
-                    if (barcodes.isNotEmpty && !isDialogOpen) {
-                      setState(() {
-                        scannedData = barcodes.first.rawValue;
-                      });
-                      if (scannedData != null) {
-                        cameraController.stop();
-                        _showConfirmationDialog(scannedData!);
-                      }
-                    }
-                  },
-                ),
-                Positioned(
-                  bottom: 50,
-                  left: 0,
-                  right: 0,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Lottie.network(
-                          'https://lottie.host/97f25c00-1e99-43bd-8911-359c486931b1/yd6EmYwqFc.json',
-                          height: 120),
-                      Text(
-                        'Arahkan kamera ke barcode',
-                        style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                )
-              ],
+      body: TemaBackground(
+        // Gunakan tema latar belakang tanpa hewan agar tidak terlalu ramai
+        showAnimals: false,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // PERBAIKAN: Kamera di-clip agar sesuai bentuk
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: MobileScanner(
+                controller: _cameraController,
+                onDetect: _onDetect,
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  scannedData = null;
-                });
-                cameraController.start();
-              },
-              icon: Icon(Icons.refresh, color: Colors.white),
-              label: Text('Mulai Ulang Scan', style: TextStyle(fontSize: 18)),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
-                backgroundColor: Colors.blueAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
+            // PERBAIKAN: Desain ulang overlay dengan Frosted Glass
+            _ScannerOverlay(
+              boxSize: MediaQuery.of(context).size.width * 0.7,
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Widget kustom untuk overlay dengan bingkai sudut
+class _ScannerOverlay extends StatelessWidget {
+  final double boxSize;
+  const _ScannerOverlay({required this.boxSize});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // PERBAIKAN: Menggunakan ClipRRect dan BackdropFilter untuk efek "Frosted Glass"
+        Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              child: Container(
+                width: boxSize,
+                height: boxSize,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
                 ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+
+        // Bingkai sudut
+        Align(
+          alignment: Alignment.center,
+          child: CustomPaint(
+            size: Size(boxSize, boxSize),
+            painter: _ScannerBoxPainter(),
+          ),
+        ),
+
+        // Animasi garis scan
+        Align(
+          alignment: Alignment.center,
+          child: Lottie.asset(
+            'assets/animation/scan.json', // Menggunakan animasi baru
+            width: boxSize,
+          ),
+        ),
+
+        const Align(
+          alignment: Alignment(0, 0.55),
+          child: Text(
+            'Arahkan kamera ke QR Code',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
+          ),
+        ),
+      ],
     );
+  }
+}
+
+// BARU: Kustom painter untuk menggambar bingkai sudut
+class _ScannerBoxPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.tealAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    final cornerSize = 30.0;
+
+    // Top-left
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, cornerSize)
+          ..lineTo(0, 0)
+          ..lineTo(cornerSize, 0),
+        paint);
+
+    // Top-right
+    canvas.drawPath(
+        Path()
+          ..moveTo(size.width - cornerSize, 0)
+          ..lineTo(size.width, 0)
+          ..lineTo(size.width, cornerSize),
+        paint);
+
+    // Bottom-left
+    canvas.drawPath(
+        Path()
+          ..moveTo(0, size.height - cornerSize)
+          ..lineTo(0, size.height)
+          ..lineTo(cornerSize, size.height),
+        paint);
+
+    // Bottom-right
+    canvas.drawPath(
+        Path()
+          ..moveTo(size.width - cornerSize, size.height)
+          ..lineTo(size.width, size.height)
+          ..lineTo(size.width, size.height - cornerSize),
+        paint);
   }
 
   @override
-  void dispose() {
-    cameraController.dispose();
-    super.dispose();
-  }
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:lottie/lottie.dart';
-
-import 'package:myapp/main.dart';
+import 'package:myapp/main.dart'; // Pastikan path import ini benar
 
 class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
   @override
-  _SplashScreenState createState() => _SplashScreenState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    // Mengatur timer untuk berpindah ke MainScreen setelah 3 detik
-    Timer(Duration(seconds: 4), () {
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (context) => MainScreen(),
-      ));
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => const MainScreen()),
+        );
+      }
     });
   }
 
@@ -26,102 +27,79 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Background image
+          // Latar Belakang (Lapisan 1, paling bawah)
           Positioned.fill(
             child: Image.asset(
               'assets/bg_gabung.png',
               fit: BoxFit.cover,
             ),
           ),
-          // Left image
+
+          // Dekorasi bawah (Lapisan 2)
           Positioned(
             bottom: 0,
             left: 0,
-            width: 800,
-            height: 800,
-            child: Image.asset('assets/bawah.png'),
+            right: 0,
+            child: Image.asset('assets/bawah.png', fit: BoxFit.fitWidth),
           ),
+
+          // Dekorasi kanan (Lapisan 3)
           Positioned(
             right: 0,
             top: 0,
             bottom: 0,
             child: Image.asset('assets/pohon_kanan_2.png'),
           ),
-          // Right image
 
-          // Lottie Animation from network (URL)
-          Positioned(
-            left: 0,
-            top: -20,
-            right: 0,
-            bottom: 0,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.4,
-                height: MediaQuery.of(context).size.height * 0.26,
-                child: Lottie.network(
-                  'https://lottie.host/0aa057e7-5060-4c1d-a1d5-7e7a7e9d35f4/dFHMXyFB64.json',
-                ),
-              ),
+          // PERBAIKAN 2: Animasi Bunglon dipindahkan ke sini (Lapisan 4)
+          // agar berada di bawah aset daun kiri.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Lottie.asset(
+              'assets/animation/bunglon_animation.json',
+              width: MediaQuery.of(context).size.width * 0.35,
             ),
           ),
+
+          // Dekorasi kiri (Lapisan 5, sekarang di atas bunglon)
           Positioned(
             left: 0,
             top: 0,
             bottom: 0,
             child: Image.asset('assets/kiri2.png'),
           ),
-          Positioned(
-            left: 0,
-            top: 0,
-            right: -80,
-            bottom: -115,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: SizedBox(
-                width: MediaQuery.of(context).size.width * 0.6,
-                height: MediaQuery.of(context).size.height * 0.6,
-                child: Lottie.network(
-                  'https://lottie.host/26d0eab0-4de3-42d5-afc1-5c35794101f6/CEXXn69r83.json',
+
+          // PERBAIKAN 1: Menggunakan Align untuk menggeser konten ke atas
+          Align(
+            alignment:
+                const Alignment(0.0, -0.8), // Geser sedikit ke atas dari tengah
+            child: Column(
+              mainAxisSize: MainAxisSize.min, // Ukuran kolom seperlunya
+              children: [
+                Image.asset(
+                  'assets/icon/icon_screen.png',
+                  width: MediaQuery.of(context).size.width * 0.45,
                 ),
-              ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Selamat Datang Di Kebun Binatang Surabaya!',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
-          // Center content
-          Positioned(
-            top: 0, // Move the entire content up
-            left: 0,
-            right: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                // Add a smaller value in MainAxisAlignment to move the content upward
-                mainAxisAlignment:
-                    MainAxisAlignment.start, // Align the content to the top
-                children: [
-                  // Icon with adjusted size
-                  Image.asset(
-                    'assets/icon_kbs1.png',
-                    width: 200, // Adjust width
-                    height: 200, // Adjust height
-                  ),
-                  SizedBox(
-                    height: 20, // Space between icon and text
-                  ),
-                  // Text with adjusted font size and weight
-                  Text(
-                    'Selamat Datang Di Kebun Binatang Surabaya!',
-                    style: TextStyle(
-                      fontSize: 20, // Adjust font size
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black, // Optional: change text color
-                    ),
-                    textAlign: TextAlign.center, // Center the text
-                  ),
-                ],
-              ),
+
+          // Animasi Jerapah (Lapisan terakhir, paling atas)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Lottie.asset(
+              'assets/animation/jerapah_animation.json',
+              width: MediaQuery.of(context).size.width * 0.7,
             ),
           ),
         ],

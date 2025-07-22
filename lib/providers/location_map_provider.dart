@@ -1,157 +1,70 @@
+// File: lib/providers/location_map_provider.dart
+
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
-import '../api/Map_Api.dart'; // Pastikan untuk mengimpor ApiService
 
 class LocationProvider with ChangeNotifier {
-  LatLng currentPosition = LatLng(0.0, 0.0);
-  String currentAddress = "Mencari alamat...";
-  double heading = 0.0; // Arah pengguna
-  StreamSubscription<Position>? positionStream; // Ini benar
+  LatLng? _currentPosition;
+  LatLng? get currentPosition => _currentPosition;
 
-  LocationProvider() {
-    _loadFromPreferences();
-  }
+  double _heading = 0.0;
+  double get heading => _heading;
 
-  Future<void> _loadFromPreferences() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    double? latitude = prefs.getDouble('latitude');
-    double? longitude = prefs.getDouble('longitude');
-    if (latitude != null && longitude != null) {
-      currentPosition = LatLng(latitude, longitude);
-      notifyListeners();
-    }
-  }
+  StreamSubscription<Position>? _positionStream;
 
-  Future<void> _saveToPreferences() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    prefs.setDouble('latitude', currentPosition.latitude);
-    prefs.setDouble('longitude', currentPosition.longitude);
-  }
+  // PERBAIKAN: Fungsi ini tidak lagi memerlukan BuildContext
+  Future<void> startLocationUpdates() async {
+    bool serviceEnabled;
+    LocationPermission permission;
 
-  Future<void> startLocationUpdates(BuildContext context) async {
-    try {
-      bool hasPermission = await _handleIzinLokasi(context);
-      if (!hasPermission) return;
-
-      final LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // Mengurangi frekuensi update lokasi
-      );
-
-      // Mendapatkan stream posisi
-      positionStream =
-          Geolocator.getPositionStream(locationSettings: locationSettings)
-              .listen((Position position) async {
-        currentPosition = LatLng(position.latitude, position.longitude);
-        heading = position.heading; // Menyimpan heading
-        currentAddress = await _getAlamatDariLatLng(position);
-        await _saveToPreferences(); // Simpan posisi saat ini
-        notifyListeners(); // Notifikasi ke semua pendengar
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Kesalahan memperoleh lokasi: ${e.toString()}'),
-      ));
-    }
-  }
-
-  void stopLocationUpdates() {
-    positionStream?.cancel();
-  }
-
-  Future<void> getCurrentLocation(BuildContext context) async {
-    try {
-      bool hasPermission = await _handleIzinLokasi(context);
-      if (!hasPermission) return;
-
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-      currentPosition = LatLng(position.latitude, position.longitude);
-      currentAddress = await _getAlamatDariLatLng(position);
-      heading = position.heading; // Simpan heading saat ini
-      await _saveToPreferences(); // Simpan lokasi saat ini
-      notifyListeners(); // Notifikasi semua pendengar
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Kesalahan memperoleh lokasi: ${e.toString()}'),
-      ));
-    }
-  }
-
-  Future<bool> _handleIzinLokasi(BuildContext context) async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Layanan lokasi dinonaktifkan.'),
-      ));
-      return false;
+      return Future.error('Layanan lokasi dinonaktifkan.');
     }
 
-    LocationPermission permission = await Geolocator.checkPermission();
+    permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Izin lokasi ditolak.'),
-        ));
-        return false;
+        return Future.error('Izin lokasi ditolak.');
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Izin lokasi ditolak secara permanen.'),
-      ));
-      return false;
+      return Future.error('Izin lokasi ditolak secara permanen.');
     }
-    return true;
-  }
 
-  Future<String> _getAlamatDariLatLng(Position position) async {
-    List<Placemark> placemarks = await placemarkFromCoordinates(
-      position.latitude,
-      position.longitude,
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5, // Update jika bergerak minimal 5 meter
     );
-    if (placemarks.isNotEmpty) {
-      Placemark place = placemarks[0];
-      return '${place.street}, ${place.subLocality}, ${place.subAdministrativeArea}, ${place.postalCode}';
-    }
-    return "Alamat tidak ditemukan";
+
+    // Hentikan stream lama sebelum memulai yang baru
+    _positionStream?.cancel();
+
+    _positionStream =
+        Geolocator.getPositionStream(locationSettings: locationSettings)
+            .listen((Position position) {
+      final newPosition = LatLng(position.latitude, position.longitude);
+
+      // Hanya notifikasi jika ada perubahan posisi yang signifikan untuk efisiensi
+      if (_currentPosition == null ||
+          Geolocator.distanceBetween(
+                  _currentPosition!.latitude,
+                  _currentPosition!.longitude,
+                  newPosition.latitude,
+                  newPosition.longitude) >
+              1) {
+        _currentPosition = newPosition;
+        _heading = position.heading;
+        notifyListeners();
+      }
+    });
   }
 
-  // Logika untuk memperbarui rute jika pengguna menyimpang
-  Future<void> checkRouteDeviation(
-      LatLng currentPosition, List<LatLng> routePoints) async {
-    final double deviationThreshold =
-        50.0; // Jarak maksimum penyimpangan (meter)
-    bool isOnRoute = false;
-
-    for (var point in routePoints) {
-      double distance = Geolocator.distanceBetween(
-        currentPosition.latitude,
-        currentPosition.longitude,
-        point.latitude,
-        point.longitude,
-      );
-      if (distance <= deviationThreshold) {
-        isOnRoute = true;
-        break;
-      }
-    }
-
-    if (!isOnRoute) {
-      // Jika pengguna menyimpang, perbarui rute
-      final newRoutePoints = await ApiService.getRoute(
-        currentPosition,
-        routePoints.last,
-      );
-      routePoints.clear();
-      routePoints.addAll(newRoutePoints);
-      notifyListeners();
-    }
+  void stopLocationUpdates() {
+    _positionStream?.cancel();
   }
 }

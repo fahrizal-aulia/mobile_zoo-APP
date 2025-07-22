@@ -45,7 +45,10 @@ dependencies:
   mobile_scanner: ^6.0.6
   url_launcher: ^6.1.0
   fluttertoast: ^8.2.12
-  # flutter_map_location_marker: ^9.1.1
+  flutter_tts: ^3.8.5
+  flutter_dotenv: ^5.1.0
+  smooth_page_indicator: ^1.1.0
+  flutter_launcher_icons: ^0.13.1
 
 
 
@@ -81,6 +84,8 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+        - .env
+        # gambar assets
         - assets/pohon_kiri_2.png
         - assets/belakang.png
         - assets/kiri2.png
@@ -94,9 +99,20 @@ flutter:
         #  icon kbs
         - assets/icon_kbs1.png
         - assets/icon/arah.png
-        - assets/icon/logokbs1.png
+        - assets/icon/
         # gambar default
         - assets/gambar/tiger.jpg
+        #animasi lottie
+        - assets/animation/bunglon_animation.json
+        - assets/animation/bunglon.json
+        - assets/animation/jerapah_animation.json
+        - assets/animation/
+        # poster
+        - assets/poster/
+        - assets/tiket/tiket_promo.png
+        - assets/spots/
+        - assets/souvenir/
+
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
@@ -122,3 +138,9 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/icon_no_bg.png" # Path ke gambar ikon Anda
+  min_sdk_android: 21

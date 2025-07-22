@@ -1,156 +1,130 @@
+// File: lib/main.dart
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+// import 'package:myapp/screens/event_screen.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/services.dart'; // Import untuk SystemChrome
-import 'package:back_button_interceptor/back_button_interceptor.dart'; // Import paket back_button_interceptor
-import 'providers/location_map_provider.dart'; // Sesuaikan dengan file provider Anda
+import 'providers/location_map_provider.dart';
 import 'screens/peta_screen.dart';
 import 'screens/camera_screen.dart';
-import 'screens/saran_screen.dart';
+import 'screens/event_screen.dart';
 import 'screens/info_screen.dart';
-import 'screens/splash_screen.dart'; // Tambahkan import untuk SplashScreen
+import 'screens/splash_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
+
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+  ));
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
   runApp(
     ChangeNotifierProvider(
-      create: (context) =>
-          LocationProvider(), // Mengasumsikan Anda memiliki LocationProvider
-      child: MyApp(),
+      create: (context) => LocationProvider(),
+      child: const MyApp(),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: SplashScreen(), // Tampilkan SplashScreen saat aplikasi dibuka
+      theme: ThemeData(primarySwatch: Colors.teal),
+      home: const SplashScreen(),
     );
   }
 }
 
 class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
   @override
-  _MainScreenState createState() => _MainScreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   DateTime? _lastBackPressed;
 
+  // PERBAIKAN: Gunakan PageStorageKey untuk membantu menjaga beberapa state sederhana
   final List<Widget> _pages = [
-    PetaScreen(),
-    CameraScreen(),
-    InfoScreen(),
-    SaranScreen(),
+    PetaScreen(key: const PageStorageKey('PetaScreen')),
+    const CameraScreen(key: PageStorageKey('CameraScreen')),
+    const EventScreen(key: PageStorageKey('EventScreen')),
+    const InfoScreen(key: PageStorageKey('InfoScreen')),
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    // Aktifkan interceptor
-    BackButtonInterceptor.add(_interceptBackButton);
-    // Mengatur mode layar penuh tanpa menyembunyikan tombol navigasi
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  }
-
-  @override
-  void dispose() {
-    // Hapus interceptor saat widget dihancurkan
-    BackButtonInterceptor.remove(_interceptBackButton);
-    super.dispose();
-  }
-
-  /// Logika untuk double back press
-  bool _interceptBackButton(bool stopDefaultButtonEvent, RouteInfo info) {
-    DateTime now = DateTime.now();
-    if (_lastBackPressed == null ||
-        now.difference(_lastBackPressed!) > Duration(seconds: 2)) {
-      _lastBackPressed = now;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Tekan dua kali untuk keluar')),
-      );
-      return true; // Blokir back button event
-    }
-    return false; // Izinkan back button untuk keluar
-  }
+  // Bucket untuk menyimpan state scroll, dll.
+  final PageStorageBucket _bucket = PageStorageBucket();
 
   void _onItemTapped(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
+    setState(() => _currentIndex = index);
+  }
+
+  void _handlePop() {
+    DateTime now = DateTime.now();
+    if (_lastBackPressed == null ||
+        now.difference(_lastBackPressed!) > const Duration(seconds: 2)) {
+      _lastBackPressed = now;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tekan sekali lagi untuk keluar')),
+      );
+    } else {
+      SystemNavigator.pop();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Mengatur status bar dan navigation bar menjadi transparan
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent, // Status bar transparan
-      systemNavigationBarColor: Colors.transparent, // Navigation bar transparan
-      systemNavigationBarIconBrightness:
-          Brightness.light, // Ikon di navigation bar
-    ));
-
-    return Scaffold(
-      body: _pages[_currentIndex],
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(2.0),
-        child: AppBar(
-          flexibleSpace: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color.fromRGBO(1, 50, 51, 1),
-                  Color.fromRGBO(1, 62, 63, 1),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-          centerTitle: true,
-          elevation: 0, // Menghilangkan bayangan
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _handlePop();
+      },
+      child: Scaffold(
+        // PERBAIKAN: Kembali ke cara sederhana, TANPA IndexedStack.
+        // Ini akan memanggil `dispose` pada halaman yang tidak aktif,
+        // melepaskan sumber daya kamera, GPS, dan kompas.
+        body: PageStorage(
+          bucket: _bucket,
+          child: _pages[_currentIndex],
         ),
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Color.fromRGBO(1, 50, 51, 1),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(0)),
-          boxShadow: [
-            BoxShadow(
-              color: Color.fromRGBO(1, 62, 63, 1),
-              blurRadius: 0,
-              offset: Offset(0, 0),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
+        bottomNavigationBar: BottomNavigationBar(
           items: const <BottomNavigationBarItem>[
             BottomNavigationBarItem(
-              icon: Icon(Icons.map),
-              label: 'Peta',
-            ),
+                icon: Icon(Icons.map_outlined),
+                activeIcon: Icon(Icons.map),
+                label: 'Peta'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.camera),
-              label: 'Kamera',
-            ),
+                icon: Icon(Icons.camera_alt_outlined),
+                activeIcon: Icon(Icons.camera_alt),
+                label: 'Kamera'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.info),
-              label: 'Info',
-            ),
+                icon: Icon(Icons.event_available),
+                activeIcon: Icon(Icons.event),
+                label: 'Event'),
             BottomNavigationBarItem(
-              icon: Icon(Icons.info),
-              label: 'Saran',
-            ),
+                icon: Icon(Icons.info_outline),
+                activeIcon: Icon(Icons.info),
+                label: 'Tentang'),
           ],
           currentIndex: _currentIndex,
-          selectedItemColor: const Color.fromRGBO(1, 117, 105, 1),
-          unselectedItemColor: Colors.grey,
-          backgroundColor:
-              Colors.transparent, // Membuat latar belakang transparan
-          elevation: 0, // Menghilangkan bayangan
+          selectedItemColor: Colors.teal,
+          unselectedItemColor: Colors.grey.shade600,
+          backgroundColor: Colors.white,
           onTap: _onItemTapped,
           type: BottomNavigationBarType.fixed,
+          showUnselectedLabels: true,
+          elevation: 10.0,
         ),
       ),
     );

@@ -1,3 +1,5 @@
+// File: custom_bar.dart
+
 import 'package:flutter/material.dart';
 
 class CustomBar extends StatelessWidget {
@@ -7,155 +9,146 @@ class CustomBar extends StatelessWidget {
   final Function(String?) onCategorySelected;
   final List<String> suggestions;
   final Function(String) onSuggestionTap;
+  final TextEditingController searchController;
 
-  CustomBar({
+  const CustomBar({
+    super.key,
     required this.onSearch,
     required this.categories,
     required this.selectedCategory,
     required this.onCategorySelected,
     required this.suggestions,
     required this.onSuggestionTap,
+    required this.searchController,
   });
+
+  // Di dalam file lib/screens/custom_bar.dart > class CustomBar
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () {
-                    FocusScope.of(context).requestFocus(FocusNode());
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.teal.shade300, Colors.teal.shade500],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 10,
-                          offset: Offset(0, 4), // Bayangan lebih halus
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      onChanged: onSearch,
-                      decoration: InputDecoration(
-                        hintText: 'Cari hewan, makanan, dan lainnya...',
-                        hintStyle: TextStyle(color: Colors.white70),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(30),
-                          borderSide: BorderSide.none,
-                        ),
-                        filled: true,
-                        fillColor: Colors.transparent,
-                        prefixIcon: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Icon(Icons.search, color: Colors.white),
-                        ),
-                        contentPadding: EdgeInsets.symmetric(vertical: 15),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    return Container(
+      // PERBAIKAN: Kurangi padding atas dan bawah untuk membuat ukurannya lebih kecil
+      padding: EdgeInsets.fromLTRB(
+          16, // Padding kiri (tetap)
+          MediaQuery.of(context).padding.top + 5, // Padding atas (dikurangi)
+          16, // Padding kanan (tetap)
+          8 // Padding bawah (dikurangi)
           ),
-        ),
-        // Menampilkan daftar saran jika ada
-        if (suggestions.isNotEmpty)
+      color: Colors.transparent, // Pastikan latar belakang transparan
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Search Bar
           Container(
-            margin: EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
+              gradient: LinearGradient(
+                colors: [Colors.teal.shade400, Colors.teal.shade600],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(30),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 5,
-                  offset: Offset(0, 2),
-                ),
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4))
               ],
             ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: suggestions.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(suggestions[index]),
-                  onTap: () {
-                    onSuggestionTap(suggestions[index]); // Ketika saran dipilih
-                  },
-                );
-              },
+            child: TextField(
+              controller: searchController,
+              onChanged: onSearch,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Cari hewan, fasilitas...',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
+                prefixIcon: const Icon(Icons.search, color: Colors.white),
+                border: InputBorder.none,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+              ),
             ),
           ),
-        Container(
-          height: 50,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: categories.length + 1, // +1 untuk tombol "Semua"
-            itemBuilder: (context, index) {
-              // Tambahkan tombol "Semua" di awal
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: ChoiceChip(
-                    label: Text("Semua"),
-                    selected: selectedCategory == null,
-                    onSelected: (bool selected) {
-                      onCategorySelected(null); // Reset kategori
-                    },
-                    backgroundColor: Colors.grey[200],
-                    selectedColor: Colors.teal,
-                    labelStyle: TextStyle(
-                      color: selectedCategory == null
-                          ? Colors.white
-                          : Colors.black,
-                    ),
-                  ),
-                );
-              }
 
-              // Tombol kategori lainnya
-              final category = categories[index - 1];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: ChoiceChip(
-                  label: Text(category),
-                  selected: selectedCategory == category,
-                  onSelected: (bool selected) {
-                    if (selected) {
-                      if (selectedCategory == category) {
-                        onCategorySelected(null); // Reset kategori
-                      } else {
-                        onCategorySelected(category); // Pilih kategori baru
-                      }
-                    }
-                  },
-                  backgroundColor: Colors.grey[200],
-                  selectedColor: Colors.teal,
-                  labelStyle: TextStyle(
-                    color: selectedCategory == category
-                        ? Colors.white
-                        : Colors.black,
-                  ),
-                ),
-              );
-            },
+          if (suggestions.isNotEmpty) _buildSuggestionsList(),
+
+          // Kurangi jarak antar elemen
+          const SizedBox(height: 8),
+
+          _buildCategoryChips(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuggestionsList() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
           ),
-        ),
-      ],
+        ],
+      ),
+      constraints: const BoxConstraints(maxHeight: 200),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        shrinkWrap: true,
+        itemCount: suggestions.length,
+        itemBuilder: (context, index) {
+          return ListTile(
+            title: Text(suggestions[index]),
+            onTap: () => onSuggestionTap(suggestions[index]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCategoryChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: categories.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            // Tombol "Semua"
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+              child: ChoiceChip(
+                label: const Text("Semua"),
+                selected: selectedCategory == null,
+                onSelected: (_) => onCategorySelected(null),
+                selectedColor: Colors.teal,
+                labelStyle: TextStyle(
+                  color: selectedCategory == null ? Colors.white : Colors.black,
+                ),
+              ),
+            );
+          }
+
+          final category = categories[index - 1];
+          final isSelected = selectedCategory == category;
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+            child: ChoiceChip(
+              label: Text(category),
+              selected: isSelected,
+              onSelected: (_) =>
+                  onCategorySelected(isSelected ? null : category),
+              selectedColor: Colors.teal,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black,
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
