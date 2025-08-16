@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
 import 'package:lottie/lottie.dart';
-import 'package:myapp/main.dart'; // Pastikan path import ini benar
+import 'package:myapp/api/api_service.dart'; // Import ApiService untuk sinkronisasi
+import 'package:myapp/screens/app_shell.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -9,17 +9,33 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _controller;
+
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 4), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const MainScreen()),
-        );
-      }
-    });
+    _controller = AnimationController(vsync: this);
+    _initializeAndNavigate();
+  }
+
+  Future<void> _initializeAndNavigate() async {
+    // Jalankan sinkronisasi data dari API ke Hive
+    await ApiService.synchronizeAllData();
+
+    // Setelah sinkronisasi selesai, baru pindah halaman
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const AppShell()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
@@ -27,23 +43,18 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Latar Belakang (Lapisan 1, paling bawah)
+          // Latar Belakang
           Positioned.fill(
-            child: Image.asset(
-              'assets/bg_gabung.png',
-              fit: BoxFit.cover,
-            ),
+            child: Image.asset('assets/bg_gabung.png', fit: BoxFit.cover),
           ),
 
-          // Dekorasi bawah (Lapisan 2)
+          // Dekorasi
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
             child: Image.asset('assets/bawah.png', fit: BoxFit.fitWidth),
           ),
-
-          // Dekorasi kanan (Lapisan 3)
           Positioned(
             right: 0,
             top: 0,
@@ -51,8 +62,7 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Image.asset('assets/pohon_kanan_2.png'),
           ),
 
-          // PERBAIKAN 2: Animasi Bunglon dipindahkan ke sini (Lapisan 4)
-          // agar berada di bawah aset daun kiri.
+          // Animasi Bunglon
           Align(
             alignment: Alignment.centerLeft,
             child: Lottie.asset(
@@ -61,7 +71,6 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           ),
 
-          // Dekorasi kiri (Lapisan 5, sekarang di atas bunglon)
           Positioned(
             left: 0,
             top: 0,
@@ -69,12 +78,11 @@ class _SplashScreenState extends State<SplashScreen> {
             child: Image.asset('assets/kiri2.png'),
           ),
 
-          // PERBAIKAN 1: Menggunakan Align untuk menggeser konten ke atas
+          // Konten Utama
           Align(
-            alignment:
-                const Alignment(0.0, -0.8), // Geser sedikit ke atas dari tengah
+            alignment: const Alignment(0.0, -0.4), // Geser lebih ke atas
             child: Column(
-              mainAxisSize: MainAxisSize.min, // Ukuran kolom seperlunya
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Image.asset(
                   'assets/icon/icon_screen.png',
@@ -86,7 +94,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: Color(0xFF1A535C),
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -94,12 +102,28 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
           ),
 
-          // Animasi Jerapah (Lapisan terakhir, paling atas)
+          // Animasi Jerapah & Loading Indicator
           Align(
             alignment: Alignment.bottomCenter,
-            child: Lottie.asset(
-              'assets/animation/jerapah_animation.json',
-              width: MediaQuery.of(context).size.width * 0.7,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Lottie.asset(
+                  'assets/animation/jerapah_animation.json',
+                  width: MediaQuery.of(context).size.width * 0.7,
+                ),
+                // Tampilkan indikator loading saat sinkronisasi
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Menyiapkan data...',
+                  style: TextStyle(
+                      color: Colors.black54, fontWeight: FontWeight.w500),
+                ),
+                SizedBox(height: MediaQuery.of(context).size.height * 0.05),
+              ],
             ),
           ),
         ],

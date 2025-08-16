@@ -1,16 +1,14 @@
-// File: lib/screens/peta_screen.dart
-
 import 'dart:async';
 import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
-
-import '../api/map_marker_api.dart';
-import '../api/Map_Api.dart';
+import 'package:flutter_html/flutter_html.dart' as html;
+import 'package:cached_network_image/cached_network_image.dart';
+import '../api/api_service.dart';
 import '../model/markers.dart';
 import '../model/NavigationInstruction.dart';
 import '../providers/location_map_provider.dart';
@@ -18,8 +16,6 @@ import 'custom_bar.dart';
 import 'hewan_screen.dart';
 import 'navigationscreen.dart';
 import 'search_service.dart';
-
-// tema
 import '../widget/tema_background.dart';
 
 class PetaScreen extends StatefulWidget {
@@ -29,8 +25,7 @@ class PetaScreen extends StatefulWidget {
   State<PetaScreen> createState() => _PetaScreenState();
 }
 
-class _PetaScreenState extends State<PetaScreen> {
-  // --- Controllers & State ---
+class _PetaScreenState extends State<PetaScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
   final SearchService _searchService = SearchService();
@@ -46,19 +41,25 @@ class _PetaScreenState extends State<PetaScreen> {
   double? _heading;
   double _currentZoom = 16.0;
 
+  String _routeDistance = '';
+  String _routeDuration = '';
+
   final LatLng _initialCoordinates = const LatLng(-7.295583, 112.736706);
   late LocationProvider _locationProvider;
   StreamSubscription<CompassEvent>? _compassSubscription;
+
+  final LatLngBounds kbsBounds = LatLngBounds(
+    const LatLng(-7.3005, 112.7335),
+    const LatLng(-7.2925, 112.7415),
+  );
 
   @override
   void initState() {
     super.initState();
     _locationProvider = Provider.of<LocationProvider>(context, listen: false);
     _locationProvider.startLocationUpdates();
-    _loadLocationAndMarkers();
+    _loadMarkersFromHive();
     _startCompassListener();
-
-    // Pindahkan listener ke sini agar tidak terpanggil saat build
     _searchController.addListener(() {
       _onSearch(_searchController.text);
     });
@@ -73,7 +74,6 @@ class _PetaScreenState extends State<PetaScreen> {
     super.dispose();
   }
 
-  // --- Listener & Logic ---
   void _startCompassListener() {
     _compassSubscription?.cancel();
     _compassSubscription = FlutterCompass.events?.listen((direction) {
@@ -87,20 +87,18 @@ class _PetaScreenState extends State<PetaScreen> {
     _compassSubscription?.cancel();
   }
 
-  Future<void> _loadLocationAndMarkers() async {
-    try {
-      _markers = await MapMarkerApi.getMarkers();
-      _filteredMarkers = _markers;
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) _showSnackBar('Gagal memuat marker.');
+  Future<void> _loadMarkersFromHive() async {
+    final box = await Hive.openBox<MarkerModel>('markersBox');
+    if (mounted) {
+      setState(() {
+        _markers = box.values.toList();
+        _filteredMarkers = _markers;
+      });
     }
   }
 
   void _navigateToHewanScreen(BuildContext context, MarkerModel marker) {
-    // Sembunyikan popup sebelum berpindah halaman
     setState(() => _selectedMarker = null);
-
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -116,6 +114,13 @@ class _PetaScreenState extends State<PetaScreen> {
       return;
     }
 
+    // PERBAIKAN: Validasi lokasi pengguna sebelum membuat rute
+    if (!kbsBounds.contains(startPosition)) {
+      _showSnackBar(
+          'Rute hanya bisa dibuat jika Anda berada di dalam area KBS.');
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       final routeInfo =
@@ -125,6 +130,13 @@ class _PetaScreenState extends State<PetaScreen> {
           _routePoints = routeInfo.routePoints;
           _instructions = routeInfo.instructions;
           _selectedMarker = null;
+          _calculateRouteSummary();
+          _mapController.fitCamera(
+            CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints(_routePoints),
+              padding: const EdgeInsets.all(50),
+            ),
+          );
         });
       }
     } catch (e) {
@@ -139,7 +151,6 @@ class _PetaScreenState extends State<PetaScreen> {
       _showSnackBar('Tidak ada rute untuk dinavigasikan.');
       return;
     }
-
     _stopCompassListener();
     Navigator.push(
       context,
@@ -154,10 +165,29 @@ class _PetaScreenState extends State<PetaScreen> {
     });
   }
 
-  // --- UI Methods ---
+  void _clearRoute() {
+    setState(() {
+      _routePoints.clear();
+      _instructions.clear();
+    });
+  }
+
+  void _calculateRouteSummary() {
+    double totalDistance = 0;
+    double totalDuration = 0;
+    for (var instruction in _instructions) {
+      totalDistance += instruction.distance;
+      totalDuration += instruction.duration;
+    }
+    setState(() {
+      _routeDistance = (totalDistance / 1000).toStringAsFixed(1);
+      _routeDuration = (totalDuration / 60).ceil().toString();
+    });
+  }
+
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), behavior: SnackBarBehavior.floating));
   }
 
   void _onSearch(String query) {
@@ -167,18 +197,17 @@ class _PetaScreenState extends State<PetaScreen> {
           : _markers
               .where((m) => m.getKategory() == _selectedCategory)
               .toList();
-
       _filteredMarkers = _searchService.searchMarkers(sourceMarkers, query);
       _suggestions = query.isEmpty
           ? []
-          : _filteredMarkers.map((m) => m.nama_marker ?? "Tanpa Nama").toList();
+          : _filteredMarkers.map((m) => m.namaMarker).toList();
     });
   }
 
   void _onCategorySelected(String? category) {
     setState(() {
       _selectedCategory = category;
-      _searchController.clear(); // Hapus teks pencarian saat ganti kategori
+      _searchController.clear();
       _filteredMarkers = category == null
           ? _markers
           : _markers.where((m) => m.getKategory() == category).toList();
@@ -188,7 +217,7 @@ class _PetaScreenState extends State<PetaScreen> {
   void _onSuggestionTap(String selectedSuggestion) {
     setState(() {
       final selected =
-          _markers.firstWhere((m) => m.nama_marker == selectedSuggestion);
+          _markers.firstWhere((m) => m.namaMarker == selectedSuggestion);
       _selectedMarker = selected;
       _mapController.move(selected.coordinates, 17.5);
       _suggestions.clear();
@@ -197,48 +226,50 @@ class _PetaScreenState extends State<PetaScreen> {
     });
   }
 
-  // --- Helper Widget Builders ---
-  Widget _buildSimpleMarker(double size) =>
-      Icon(Icons.location_pin, color: Colors.green.shade700, size: size);
-
-  Widget _buildDetailedMarker(double size) => Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(Icons.location_pin, color: Colors.green.shade700, size: size),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4.0),
-            child: Icon(Icons.pets, color: Colors.white, size: size * 0.4),
-          ),
-        ],
-      );
-
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final locationProvider = Provider.of<LocationProvider>(context);
-    // Tentukan tinggi header secara dinamis atau tetap
-    const double headerHeight = 150.0;
 
     return PopScope(
       canPop: _selectedMarker == null && _routePoints.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_routePoints.isNotEmpty) {
-          setState(() => _routePoints.clear());
+          _clearRoute();
         } else if (_selectedMarker != null) {
           setState(() => _selectedMarker = null);
         }
       },
       child: Scaffold(
-        // PERBAIKAN: Menggunakan Stack untuk menumpuk tema, peta, dan custom bar
-        body: Stack(
+        body: Column(
           children: [
-            // LAPISAN 1: TEMA LATAR BELAKANG UKURAN PENUH
-            const TemaBackground(showBunglon: false),
-
-            // LAPISAN 2: PETA (dimulai dari bawah header)
-            Padding(
-              padding: const EdgeInsets.only(top: headerHeight),
+            SizedBox(
+              height: 150,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const TemaBackground(
+                    showAnimals: false,
+                    displayMode: BackgroundDisplayMode.topOnly,
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: CustomBar(
+                      onSearch: _onSearch,
+                      categories:
+                          _markers.map((e) => e.getKategory()).toSet().toList(),
+                      selectedCategory: _selectedCategory,
+                      onCategorySelected: _onCategorySelected,
+                      suggestions: _suggestions,
+                      onSuggestionTap: _onSuggestionTap,
+                      searchController: _searchController,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -246,13 +277,34 @@ class _PetaScreenState extends State<PetaScreen> {
                     mapController: _mapController,
                     options: MapOptions(
                       initialCenter: _initialCoordinates,
-                      initialZoom: _currentZoom,
-                      maxZoom: 18.0,
-                      minZoom: 14.0,
+                      initialZoom: 16.0,
+                      maxZoom: 22.0,
+                      minZoom: 16.0,
+                      // PERBAIKAN: Hapus cameraConstraint
+                      // cameraConstraint: CameraConstraint.contain(bounds: kbsBounds),
+
+                      // BARU: Tambahkan logika ini untuk membatasi pergerakan peta
                       onPositionChanged: (position, hasGesture) {
-                        if (position.zoom != null &&
-                            position.zoom != _currentZoom) {
-                          setState(() => _currentZoom = position.zoom!);
+                        if (hasGesture) {
+                          if (!kbsBounds.contains(position.center)) {
+                            // Clamp the center to the bounds manually
+                            final lat = position.center.latitude.clamp(
+                              kbsBounds.southWest.latitude,
+                              kbsBounds.northEast.latitude,
+                            );
+                            final lng = position.center.longitude.clamp(
+                              kbsBounds.southWest.longitude,
+                              kbsBounds.northEast.longitude,
+                            );
+                            final constrainedCenter = LatLng(lat, lng);
+
+                            Future.microtask(() => _mapController.move(
+                                constrainedCenter, position.zoom));
+                          }
+                        }
+                        // Update zoom level seperti biasa
+                        if (position.zoom != _currentZoom) {
+                          setState(() => _currentZoom = position.zoom);
                         }
                       },
                       onTap: (_, __) => setState(() => _selectedMarker = null),
@@ -261,17 +313,14 @@ class _PetaScreenState extends State<PetaScreen> {
                       TileLayer(
                         urlTemplate:
                             'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        // subdomains: const ['a', 'b', 'c'],
                         userAgentPackageName: "id.kbs.mobile",
                       ),
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                              points: _routePoints,
-                              color: Colors.blue.shade700,
-                              strokeWidth: 5),
-                        ],
-                      ),
+                      PolylineLayer(polylines: [
+                        Polyline(
+                            points: _routePoints,
+                            color: Colors.blue.shade700,
+                            strokeWidth: 5),
+                      ]),
                       MarkerLayer(
                         markers: [
                           ..._filteredMarkers.map((marker) {
@@ -284,7 +333,8 @@ class _PetaScreenState extends State<PetaScreen> {
                                 onTap: () =>
                                     setState(() => _selectedMarker = marker),
                                 child: _currentZoom > 16.5
-                                    ? _buildDetailedMarker(markerSize)
+                                    ? _buildDetailedMarker(
+                                        markerSize, marker.iconUrl)
                                     : _buildSimpleMarker(markerSize),
                               ),
                             );
@@ -306,43 +356,34 @@ class _PetaScreenState extends State<PetaScreen> {
                     ],
                   ),
                   if (_selectedMarker != null) _buildMarkerPopup(screenSize),
-                  if (_routePoints.isNotEmpty) _buildNavigationButton(),
+                  if (_routePoints.isNotEmpty) _buildRouteInfoPanel(),
                   if (_isLoading) _buildLoadingIndicator(),
                   Positioned(
-                    bottom:
-                        _routePoints.isNotEmpty ? screenSize.height * 0.12 : 20,
+                    bottom: _routePoints.isNotEmpty ? 150 : 20,
                     right: 20,
-                    child: FloatingActionButton(
-                      onPressed: () {
-                        if (locationProvider.currentPosition != null) {
-                          _mapController.move(
-                              locationProvider.currentPosition!, 17.5);
-                        }
-                      },
-                      child: const Icon(Icons.my_location),
+                    child: Tooltip(
+                      message: 'Tampilkan Lokasi Saya',
+                      child: FloatingActionButton(
+                        onPressed: () {
+                          // PERBAIKAN: Logika cerdas untuk tombol "My Location"
+                          final userPosition = locationProvider.currentPosition;
+                          if (userPosition == null) {
+                            _showSnackBar('Mencari lokasi Anda...');
+                            return;
+                          }
+                          if (kbsBounds.contains(userPosition)) {
+                            _mapController.move(userPosition, 17.5);
+                          } else {
+                            _mapController.move(_initialCoordinates, 16.0);
+                            _showSnackBar(
+                                'Anda berada di luar area Kebun Binatang Surabaya.');
+                          }
+                        },
+                        child: const Icon(Icons.my_location),
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ),
-
-            // LAPISAN 3: CUSTOM BAR (berada di atas tema dan di area aman)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false, // Hanya peduli pada area aman di atas
-                child: CustomBar(
-                  onSearch: _onSearch,
-                  categories:
-                      _markers.map((e) => e.getKategory()).toSet().toList(),
-                  selectedCategory: _selectedCategory,
-                  onCategorySelected: _onCategorySelected,
-                  suggestions: _suggestions,
-                  onSuggestionTap: _onSuggestionTap,
-                  searchController: _searchController,
-                ),
               ),
             ),
           ],
@@ -351,18 +392,74 @@ class _PetaScreenState extends State<PetaScreen> {
     );
   }
 
-  Widget _buildNavigationButton() {
+  // --- Helper Widget Builders ---
+
+  Widget _buildSimpleMarker(double size) =>
+      Icon(Icons.location_pin, color: Colors.green.shade700, size: size);
+
+  Widget _buildDetailedMarker(double size, String iconUrl) {
+    if (iconUrl.isEmpty) {
+      return _buildSimpleMarker(size);
+    }
+    return CachedNetworkImage(
+      imageUrl: iconUrl,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      placeholder: (context, url) => _buildSimpleMarker(size),
+      errorWidget: (context, url, error) => _buildSimpleMarker(size),
+    );
+  }
+
+  Widget _buildRouteInfoPanel() {
     return Positioned(
-      bottom: 20,
-      left: 20,
-      right: 20,
-      child: ElevatedButton.icon(
-        icon: const Icon(Icons.navigation_rounded),
-        label: const Text('Mulai Navigasi'),
-        onPressed: _startNavigation,
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 15),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Card(
+        margin: const EdgeInsets.all(16),
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Estimasi Perjalanan',
+                          style: TextStyle(color: Colors.grey)),
+                      Text(
+                        '$_routeDuration mnt • $_routeDistance km',
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey),
+                    onPressed: _clearRoute,
+                    tooltip: "Batal Rute",
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(15)),
+                ),
+                onPressed: _startNavigation,
+                child: const Text('Mulai Navigasi',
+                    style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -378,7 +475,6 @@ class _PetaScreenState extends State<PetaScreen> {
   Widget _buildMarkerPopup(Size screenSize) {
     if (_selectedMarker == null) return const SizedBox.shrink();
     final marker = _selectedMarker!;
-
     return GestureDetector(
       onTap: () => setState(() => _selectedMarker = null),
       child: Container(
@@ -394,23 +490,29 @@ class _PetaScreenState extends State<PetaScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(marker.nama_marker ?? "Tanpa Nama",
+                  Text(marker.namaDetail ?? marker.namaMarker,
                       style: const TextStyle(
                           fontSize: 22, fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center),
                   const SizedBox(height: 12),
-
-                  // BARU: Menambahkan Hero widget untuk animasi gambar
                   Hero(
                     tag: 'hewan-image-${marker.id}',
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        marker.gambar ?? '',
+                      // PERBAIKAN: Gunakan CachedNetworkImage untuk gambar di popup
+                      child: CachedNetworkImage(
+                        imageUrl: marker.gambarDetailUrl ?? '',
                         width: double.infinity,
                         height: 150,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Image.asset(
+                        placeholder: (context, url) => Container(
+                          width: double.infinity,
+                          height: 150,
+                          color: Colors.grey.shade200,
+                          child:
+                              const Center(child: CircularProgressIndicator()),
+                        ),
+                        errorWidget: (context, url, error) => Image.asset(
                             'assets/gambar/tiger.jpg',
                             width: double.infinity,
                             height: 150,
@@ -419,12 +521,17 @@ class _PetaScreenState extends State<PetaScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    marker.deskripsi ?? "Deskripsi tidak tersedia.",
-                    style: TextStyle(fontSize: 15, color: Colors.grey[700]),
-                    textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                  html.Html(
+                    data: marker.deskripsi ?? "Deskripsi tidak tersedia.",
+                    style: {
+                      "body": html.Style(
+                        fontSize: html.FontSize(15.0),
+                        color: Colors.grey[700],
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        textOverflow: TextOverflow.ellipsis,
+                      ),
+                    },
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -439,7 +546,6 @@ class _PetaScreenState extends State<PetaScreen> {
                         label: const Text('Rute',
                             style: TextStyle(color: Colors.white)),
                       ),
-                      // PERBAIKAN: Tombol Detail sekarang menavigasi ke HewanScreen
                       OutlinedButton.icon(
                         onPressed: () =>
                             _navigateToHewanScreen(context, marker),
@@ -451,66 +557,6 @@ class _PetaScreenState extends State<PetaScreen> {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showAnimalDetail(BuildContext context, MarkerModel marker) {
-    print('DEBUG: URL Gambar dari API untuk detail: ${marker.gambar}');
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        builder: (_, scrollController) => Container(
-          padding: const EdgeInsets.all(20),
-          child: ListView(
-            controller: scrollController,
-            children: [
-              Center(
-                  child: Text(marker.nama_marker ?? "Tanpa Nama",
-                      style: const TextStyle(
-                          fontSize: 24, fontWeight: FontWeight.bold))),
-              const SizedBox(height: 16),
-              if (marker.gambar != null && marker.gambar!.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(marker.gambar!,
-                      width: double.infinity,
-                      height: 200,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, progress) =>
-                          progress == null
-                              ? child
-                              : const Center(
-                                  heightFactor: 3,
-                                  child: CircularProgressIndicator()),
-                      errorBuilder: (context, error, stackTrace) {
-                        print(
-                            'DEBUG: Gagal memuat gambar dari URL. Error: $error');
-                        return Image.asset('assets/gambar/tiger.jpg',
-                            width: double.infinity,
-                            height: 200,
-                            fit: BoxFit.cover);
-                      }),
-                )
-              else
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.asset('assets/gambar/tiger.jpg',
-                      width: double.infinity, height: 200, fit: BoxFit.cover),
-                ),
-              const SizedBox(height: 16),
-              Text(marker.deskripsi ?? "Deskripsi tidak tersedia.",
-                  style: TextStyle(
-                      fontSize: 16, height: 1.5, color: Colors.grey[850])),
-            ],
           ),
         ),
       ),

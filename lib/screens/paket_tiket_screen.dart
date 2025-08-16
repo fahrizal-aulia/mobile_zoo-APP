@@ -1,44 +1,43 @@
-// File: lib/screens/event_screen.dart
+// File: lib/screens/paket_tiket_screen.dart
 
 import 'package:flutter/material.dart';
-// import 'dart:ui';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:ui';
 import '../widget/tema_background.dart';
-import '../model/event_model.dart';
+import '../model/paket_model.dart';
 
-class EventScreen extends StatefulWidget {
-  const EventScreen({super.key});
+class PaketTiketScreen extends StatefulWidget {
+  const PaketTiketScreen({super.key});
 
   @override
-  State<EventScreen> createState() => _EventScreenState();
+  State<PaketTiketScreen> createState() => _PaketTiketScreenState();
 }
 
-class _EventScreenState extends State<EventScreen> {
+class _PaketTiketScreenState extends State<PaketTiketScreen> {
   final PageController _pageController = PageController(viewportFraction: 0.8);
   double _currentPageValue = 0.0;
-  List<EventModel> _events = [];
+
+  List<PaketModel> _pakets = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadEventsFromHive();
+    _loadPaketsFromHive();
     _pageController.addListener(() {
       if (_pageController.page != null) {
-        setState(() {
-          _currentPageValue = _pageController.page!;
-        });
+        setState(() => _currentPageValue = _pageController.page!);
       }
     });
   }
 
-  Future<void> _loadEventsFromHive() async {
-    final box = await Hive.openBox<EventModel>('eventsBox');
+  Future<void> _loadPaketsFromHive() async {
+    final box = await Hive.openBox<PaketModel>('paketsBox');
     if (mounted) {
       setState(() {
-        _events = box.values.toList();
+        _pakets = box.values.toList();
         _isLoading = false;
       });
     }
@@ -93,11 +92,10 @@ class _EventScreenState extends State<EventScreen> {
     return Scaffold(
       body: TemaBackground(
         showAnimals: true,
+        displayMode: BackgroundDisplayMode.full,
         child: SafeArea(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- Header Kustom ---
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Row(
@@ -109,24 +107,25 @@ class _EventScreenState extends State<EventScreen> {
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(width: 16),
-                    const Text('Event Spesial',
+                    const Text('Paket & Promo Tiket',
                         style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
-                            color: Color.fromARGB(255, 46, 70, 69))),
+                            color: Color.fromARGB(255, 46, 70, 69),
+                            shadows: [
+                              Shadow(blurRadius: 4, color: Colors.black54)
+                            ])),
                   ],
                 ),
               ),
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24.0),
+                padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
                 child: Text(
-                    'Jangan lewatkan berbagai keseruan di Kebun Binatang Surabaya!',
+                    'Jangan lewatkan Paket Promo Tiket di Kebun Binatang Surabaya!',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 16, color: Color.fromARGB(255, 46, 70, 69))),
               ),
-              const SizedBox(height: 10),
-
               Expanded(
                 child: _buildContentView(),
               ),
@@ -142,10 +141,10 @@ class _EventScreenState extends State<EventScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_events.isEmpty) {
+    if (_pakets.isEmpty) {
       return const Center(
         child: Text(
-          "Informasi event tidak tersedia.\nPastikan koneksi internet aktif saat pertama kali membuka aplikasi.",
+          "Informasi paket tidak tersedia.\nPastikan Anda memiliki koneksi internet saat pertama kali membuka aplikasi.",
           textAlign: TextAlign.center,
           style:
               TextStyle(color: Color.fromARGB(255, 46, 70, 69), fontSize: 16),
@@ -154,11 +153,12 @@ class _EventScreenState extends State<EventScreen> {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: PageView.builder(
             controller: _pageController,
-            itemCount: _events.length,
+            itemCount: _pakets.length,
             itemBuilder: (context, index) {
               double scale = 1.0;
               if (_pageController.position.haveDimensions) {
@@ -167,79 +167,52 @@ class _EventScreenState extends State<EventScreen> {
               }
               return Transform.scale(
                 scale: scale,
-                child: _buildEventCard(_events[index]),
+                child: _buildPaketCard(_pakets[index]),
               );
             },
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 20.0),
-          child: SmoothPageIndicator(
-            controller: _pageController,
-            count: _events.length,
-            effect: WormEffect(
-              // Nama effect yang benar adalah WormingDotsEffect
-              dotHeight: 12,
-              dotWidth: 12,
-              activeDotColor: Colors.teal.shade200,
-              dotColor: Colors.white.withOpacity(0.5),
+        if (_pakets.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 20.0),
+            child: SmoothPageIndicator(
+              controller: _pageController,
+              count: _pakets.length,
+              effect: WormEffect(
+                dotHeight: 12,
+                dotWidth: 12,
+                activeDotColor: Colors.teal.shade200,
+                dotColor: Colors.white.withOpacity(0.5),
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 
-  Widget _buildEventCard(EventModel event) {
+  Widget _buildPaketCard(PaketModel paket) {
     return GestureDetector(
-      onTap: () => _showImageDialog(context, event.imageUrl),
+      onTap: () => _showImageDialog(context, paket.imageUrl),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 30),
-        // PERBAIKAN: Gunakan ClipRRect untuk memotong gambar dan Stack untuk menumpuk
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
+        decoration: BoxDecoration(
+          color: Colors.white, // Warna placeholder
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+                color: Colors.black26, blurRadius: 15, offset: Offset(0, 10))
+          ],
+        ),
+        // PERBAIKAN: Gunakan ClipRRect untuk memotong gambar
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // LAPISAN 1: GAMBAR DARI CACHE
-              CachedNetworkImage(
-                imageUrl: event.imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (context, url) =>
-                    const Center(child: CircularProgressIndicator()),
-                errorWidget: (context, url, error) => const Icon(
-                    Icons.broken_image,
-                    size: 50,
-                    color: Colors.grey),
-              ),
-
-              // LAPISAN 2: GRADASI GELAP
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
-                    stops: const [0.6, 1.0],
-                  ),
-                ),
-              ),
-
-              // LAPISAN 3: JUDUL
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 20,
-                child: Text(
-                  event.title,
-                  style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
-                ),
-              )
-            ],
+          child: CachedNetworkImage(
+            imageUrl: paket.imageUrl,
+            fit: BoxFit.contain,
+            placeholder: (context, url) =>
+                const Center(child: CircularProgressIndicator()),
+            errorWidget: (context, url, error) =>
+                const Icon(Icons.error, color: Colors.red),
           ),
         ),
       ),

@@ -1,7 +1,11 @@
+// File: lib/screens/hewan_screen.dart
+
 import 'package:flutter/material.dart';
-import 'package:myapp/model/markers.dart'; // Sesuaikan path import
-import 'package:myapp/widget/tema_background.dart'; // Sesuaikan path import
-import 'dart:ui'; // Diperlukan untuk ImageFilter
+import 'package:myapp/model/markers.dart';
+import 'package:myapp/widget/tema_background.dart';
+import 'dart:ui';
+import 'package:flutter_html/flutter_html.dart' as html;
+import 'package:cached_network_image/cached_network_image.dart'; // BARU: Import package
 
 class HewanScreen extends StatelessWidget {
   final MarkerModel marker;
@@ -11,28 +15,21 @@ class HewanScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    // PERBAIKAN: Definisikan warna teks baru Anda
     const Color textColor = Color.fromARGB(255, 46, 70, 69);
 
     return Scaffold(
       body: Stack(
         children: [
-          const TemaBackground(
-            showAnimals: true,
-            showBunglon: true,
-          ),
+          const TemaBackground(showAnimals: true),
 
           SingleChildScrollView(
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Column(
-                  // PERBAIKAN: Mengatur konten agar selalu di tengah secara horizontal
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     SizedBox(height: screenSize.height * 0.1),
-
-                    // PERBAIKAN: Desain ulang gambar lingkaran
                     Hero(
                       tag: 'hewan-image-${marker.id}',
                       child: Container(
@@ -48,21 +45,23 @@ class HewanScreen extends StatelessWidget {
                             ),
                           ],
                         ),
+                        // PERBAIKAN: Gunakan ClipOval untuk memotong CachedNetworkImage
                         child: ClipOval(
-                          child: Image.network(
-                            marker.gambar ?? '',
+                          child: CachedNetworkImage(
+                            imageUrl: marker.gambarDetailUrl ?? '',
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Image.asset('assets/gambar/tiger.jpg',
-                                    fit: BoxFit.cover),
+                            placeholder: (context, url) => const Center(
+                                child: CircularProgressIndicator()),
+                            errorWidget: (context, url, error) => Image.asset(
+                                'assets/gambar/tiger.jpg',
+                                fit: BoxFit.cover),
                           ),
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
-
                     Text(
-                      marker.nama_marker ?? 'Detail Hewan',
+                      marker.namaDetail ?? marker.namaMarker,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 32,
@@ -72,7 +71,6 @@ class HewanScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-
                     ClipRRect(
                       borderRadius: BorderRadius.circular(20),
                       child: BackdropFilter(
@@ -80,8 +78,7 @@ class HewanScreen extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.all(24.0),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(
-                                0.5), // Latar belakang lebih solid untuk kontras
+                            color: Colors.white.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                                 color: Colors.white.withOpacity(0.2)),
@@ -94,19 +91,24 @@ class HewanScreen extends StatelessWidget {
                                 style: TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
-                                  color: textColor, // Menggunakan warna baru
+                                  color: textColor,
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              Text(
-                                marker.deskripsi ??
+                              html.Html(
+                                data: marker.deskripsi ??
                                     'Informasi detail tidak tersedia.',
-                                textAlign: TextAlign.justify,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  height: 1.6,
-                                  color: textColor, // Menggunakan warna baru
-                                ),
+                                style: {
+                                  "body": html.Style(
+                                    fontSize: html.FontSize(16.0),
+                                    lineHeight: html.LineHeight.number(1.6),
+                                    color: textColor,
+                                    textAlign: TextAlign.justify,
+                                  ),
+                                  "b": html.Style(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                },
                               ),
                             ],
                           ),

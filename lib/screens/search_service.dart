@@ -6,7 +6,7 @@ class SearchService {
       return markers;
     }
     return markers.where((marker) {
-      return marker.nama_marker?.toLowerCase().contains(query.toLowerCase()) ??
+      return marker.namaMarker?.toLowerCase().contains(query.toLowerCase()) ??
           false;
     }).toList();
   }

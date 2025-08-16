@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:lottie/lottie.dart';
-import 'dart:ui'; // Diperlukan untuk ImageFilter
-import '../widget/tema_background.dart'; // Pastikan path ini benar
+import 'dart:ui';
+import '../widget/tema_background.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -15,10 +15,10 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen> {
   final MobileScannerController _cameraController = MobileScannerController(
-    // Optimasi untuk deteksi barcode yang lebih cepat
     detectionSpeed: DetectionSpeed.normal,
   );
   bool _isProcessing = false;
+  bool _isTorchOn = false;
 
   @override
   void dispose() {
@@ -40,10 +40,12 @@ class _CameraScreenState extends State<CameraScreen> {
       if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
         await _showConfirmationDialog(uri);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Kode QR tidak berisi link yang valid.')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Kode QR tidak berisi link yang valid.')),
+          );
+        }
       }
 
       if (mounted) {
@@ -65,7 +67,7 @@ class _CameraScreenState extends State<CameraScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Lottie.asset('assets/animations/qr_anim.json', height: 100),
+              Lottie.asset('assets/animation/qr_animation.json', height: 100),
               const SizedBox(height: 10),
               const Text('Anda akan membuka link detail hewan:',
                   textAlign: TextAlign.center),
@@ -109,40 +111,115 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final scannerSize = size.width * 0.8;
+
     return Scaffold(
-      // PERBAIKAN: Latar belakang dibuat transparan agar TemaBackground terlihat
       backgroundColor: Colors.transparent,
-      // Hapus AppBar agar lebih imersif
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: const Text('Scan QR Code Hewan'),
-        backgroundColor: Colors.transparent, // AppBar transparan
-        elevation: 0, // Hilangkan bayangan
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           IconButton(
-              tooltip: 'Nyalakan Flash',
-              icon: const Icon(Icons.flash_on),
-              onPressed: () => _cameraController.toggleTorch()),
+            icon: Icon(_isTorchOn ? Icons.flash_off : Icons.flash_on),
+            onPressed: () {
+              setState(() => _isTorchOn = !_isTorchOn);
+              _cameraController.toggleTorch();
+            },
+          ),
         ],
       ),
       body: TemaBackground(
-        // Gunakan tema latar belakang tanpa hewan agar tidak terlalu ramai
-        showAnimals: false,
+        showAnimals: true,
         child: Stack(
-          alignment: Alignment.center,
           children: [
-            // PERBAIKAN: Kamera di-clip agar sesuai bentuk
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: MobileScanner(
-                controller: _cameraController,
-                onDetect: _onDetect,
+            // Background yang terlihat di semua sisi
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.4),
               ),
             ),
-            // PERBAIKAN: Desain ulang overlay dengan Frosted Glass
-            _ScannerOverlay(
-              boxSize: MediaQuery.of(context).size.width * 0.7,
-            )
+
+            // Area scanner di tengah
+            Center(
+              child: Container(
+                width: scannerSize,
+                height: scannerSize,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: Colors.white.withOpacity(0.2), width: 1),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: MobileScanner(
+                    controller: _cameraController,
+                    onDetect: _onDetect,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+
+            // Overlay dengan efek frosted glass
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                child: Container(
+                  color: Colors.black.withOpacity(0.1),
+                ),
+              ),
+            ),
+
+            // Bingkai scanner
+            Center(
+              child: CustomPaint(
+                size: Size(scannerSize, scannerSize),
+                painter: _ScannerBoxPainter(),
+              ),
+            ),
+
+            // Animasi garis scan
+            Center(
+              child: SizedBox(
+                width: scannerSize,
+                height: scannerSize,
+                child: Lottie.asset(
+                  'assets/animation/scan.json',
+                  fit: BoxFit.fill,
+                ),
+              ),
+            ),
+
+            // Petunjuk penggunaan
+            Positioned(
+              bottom: size.height * 0.15,
+              left: 0,
+              right: 0,
+              child: const Column(
+                children: [
+                  Text(
+                    'Arahkan kamera ke QR Code',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Pastikan QR Code berada dalam bingkai',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -150,108 +227,39 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 }
 
-// Widget kustom untuk overlay dengan bingkai sudut
-class _ScannerOverlay extends StatelessWidget {
-  final double boxSize;
-  const _ScannerOverlay({required this.boxSize});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // PERBAIKAN: Menggunakan ClipRRect dan BackdropFilter untuk efek "Frosted Glass"
-        Center(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-              child: Container(
-                width: boxSize,
-                height: boxSize,
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        // Bingkai sudut
-        Align(
-          alignment: Alignment.center,
-          child: CustomPaint(
-            size: Size(boxSize, boxSize),
-            painter: _ScannerBoxPainter(),
-          ),
-        ),
-
-        // Animasi garis scan
-        Align(
-          alignment: Alignment.center,
-          child: Lottie.asset(
-            'assets/animation/scan.json', // Menggunakan animasi baru
-            width: boxSize,
-          ),
-        ),
-
-        const Align(
-          alignment: Alignment(0, 0.55),
-          child: Text(
-            'Arahkan kamera ke QR Code',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// BARU: Kustom painter untuk menggambar bingkai sudut
 class _ScannerBoxPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.tealAccent
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
 
     final cornerSize = 30.0;
+    final cornerWidth = 5.0;
 
-    // Top-left
-    canvas.drawPath(
-        Path()
-          ..moveTo(0, cornerSize)
-          ..lineTo(0, 0)
-          ..lineTo(cornerSize, 0),
-        paint);
+    // Top-left corner
+    canvas.drawLine(Offset(0, cornerSize), Offset(0, 0), paint);
+    canvas.drawLine(Offset(0, 0), Offset(cornerSize, 0), paint);
 
-    // Top-right
-    canvas.drawPath(
-        Path()
-          ..moveTo(size.width - cornerSize, 0)
-          ..lineTo(size.width, 0)
-          ..lineTo(size.width, cornerSize),
-        paint);
+    // Top-right corner
+    canvas.drawLine(
+        Offset(size.width - cornerSize, 0), Offset(size.width, 0), paint);
+    canvas.drawLine(
+        Offset(size.width, 0), Offset(size.width, cornerSize), paint);
 
-    // Bottom-left
-    canvas.drawPath(
-        Path()
-          ..moveTo(0, size.height - cornerSize)
-          ..lineTo(0, size.height)
-          ..lineTo(cornerSize, size.height),
-        paint);
+    // Bottom-left corner
+    canvas.drawLine(
+        Offset(0, size.height - cornerSize), Offset(0, size.height), paint);
+    canvas.drawLine(
+        Offset(0, size.height), Offset(cornerSize, size.height), paint);
 
-    // Bottom-right
-    canvas.drawPath(
-        Path()
-          ..moveTo(size.width - cornerSize, size.height)
-          ..lineTo(size.width, size.height)
-          ..lineTo(size.width, size.height - cornerSize),
-        paint);
+    // Bottom-right corner
+    canvas.drawLine(Offset(size.width - cornerSize, size.height),
+        Offset(size.width, size.height), paint);
+    canvas.drawLine(Offset(size.width, size.height),
+        Offset(size.width, size.height - cornerSize), paint);
   }
 
   @override
